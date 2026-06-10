@@ -43,8 +43,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     });
 
   let resp = await doFetch(sid);
-  // 세션이 서버에서 사라졌으면(404) 새로 만들어 1회 재시도
-  if (resp.status === 404 && path !== "/api/session") {
+  // 세션이 서버에서 사라졌으면(404) 새로 만들어 1회 재시도.
+  // createSession 은 request() 를 거치지 않으므로 /api/session(getSession)도
+  // 안전하게 복구 대상에 포함한다 — 재시도는 1회뿐이라 재귀 위험 없음.
+  if (resp.status === 404) {
     const body = (await resp.clone().json().catch(() => ({}))) as ApiError;
     if (body.detail?.includes("세션")) {
       sid = await createSession();

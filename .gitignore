@@ -11,6 +11,12 @@ frontend/dist/
 frontend/node_modules/.tmp/
 *.tsbuildinfo
 
+# Playwright (E2E)
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/.playwright/
+
 # 에디터/OS
 .DS_Store
 .idea/

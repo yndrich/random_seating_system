@@ -29,6 +29,9 @@ from pathlib import Path
 CHECK_TIMEOUT = 600  # 초. pytest + vite build 합산 상한.
 # 한 명령 세그먼트 안의 `git [옵션/-c key=val ...] commit` 을 탐지(commit-graph 등은 제외).
 _GIT_COMMIT_RE = re.compile(r"\bgit\b(?:\s+(?:-{1,2}\S+|\S+=\S+))*\s+commit\b(?!-)")
+# 입력이 "구조화된 Claude 훅 JSON"임을 알려주는 표지 키. 하나라도 있으면 Claude 이벤트로 확정하고,
+# 그 안에서 git commit이 식별될 때만 검사한다(모르는 이벤트/도구로 무거운 게이트를 돌리지 않음).
+_CLAUDE_HOOK_KEYS = ("hook_event_name", "tool_name", "tool_input", "session_id")
 
 
 def project_root() -> Path:
@@ -127,15 +130,25 @@ def format_failure(results: list[dict]) -> str:
 
 
 def should_check_from_claude_payload(raw: str) -> bool | None:
-    """Claude 훅 JSON을 보고 검사 여부 결정. True=검사, False=통과(무관), None=JSON 아님."""
+    """Claude 훅 JSON을 보고 검사 여부 결정.
+
+    True=검사, False=통과(무관), None=Claude 훅 JSON이 아님(→ 호출자가 안전판단).
+
+    표지 키(_CLAUDE_HOOK_KEYS)가 하나라도 있으면 Claude 훅 이벤트로 '확정'하고, 그 안에서
+    Bash·git commit이 명확히 식별될 때만 True. tool_input이 없거나 다른 도구/이벤트면 False(통과)다 —
+    훅이 다른 이벤트로 재사용되거나 페이로드 스키마가 바뀌어도 무거운 게이트가 헛돌지 않게 한다.
+    """
     try:
         data = json.loads(raw)
     except Exception:
         return None
-    if not isinstance(data, dict) or "tool_input" not in data:
+    if not isinstance(data, dict):
         return None
+    if not any(k in data for k in _CLAUDE_HOOK_KEYS):
+        return None  # Claude 훅으로 인식 안 됨(빈 stdin·비JSON 등) → 호출자가 안전판단
+    # 여기부터는 Claude 훅 JSON으로 확정 → 모르는 도구/이벤트는 '무관(통과)'으로 본다.
     if data.get("tool_name") != "Bash":
-        return False  # Bash가 아닌 도구는 우리 관심사 아님 → 통과
+        return False  # Bash가 아닌 도구/이벤트는 우리 관심사 아님 → 통과
     cmd = (data.get("tool_input") or {}).get("command", "") or ""
     if not _GIT_COMMIT_RE.search(cmd):
         return False  # git commit이 아닌 Bash 명령 → 통과
@@ -158,7 +171,7 @@ def main() -> int:
         else:
             decision = should_check_from_claude_payload(raw)
             if decision is None:
-                do_check = True   # JSON 해석 실패 → 안전하게 검사
+                do_check = True   # Claude 훅 JSON 아님(비JSON·비표지 = git 훅 경로) → 안전하게 검사
             else:
                 do_check = decision
 

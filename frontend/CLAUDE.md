@@ -16,6 +16,25 @@ npm run build      # tsc --noEmit (타입체크) + vite build
 - **백엔드(8000)가 떠 있지 않으면** Vite 프록시가 `/api/*`에 500을 반환한다
   (`net::ERR_ABORTED`). dev 시 두 서버를 함께 띄울 것(프록시 설정은 `vite.config.ts`).
 
+## E2E 동작 검증 (프론트 변경을 끝냈을 때 1회)
+
+```bash
+cd frontend && npm run test:e2e   # Playwright 헤드리스 스모크
+```
+
+- **언제:** `App.tsx`·`src/components/*`·`src/api/client.ts` 등 프론트 **동작**을 바꾼 뒤,
+  작업을 마무리할 때 한 번 돌린다. (매 수정마다 X — 느리고 무겁다.)
+- **왜:** `npm run build`(=`tsc`)는 **타입만** 보고, `pytest`/`smoke_api.py`는 **백엔드만**
+  본다. 버튼 클릭 → `client.ts` 호출 → API → 화면 렌더까지 **끝단 동작**은 이 스모크만 잡는다.
+- **무엇을:** `playwright.config.ts`의 `webServer`가 백엔드(8000)+프론트(5173)를 **자동
+  기동**(이미 떠 있으면 재사용)하고, `e2e/smoke.spec.ts`가 참가자 추가→편성(solver)→확정→
+  롤백 happy path를 실제 DOM으로 검증한다(`하드 위반 0`, 4조 12명 착석 포함).
+- **일회성 셋업:** `npm install` 로 `@playwright/test` 설치 후 `npx playwright install
+  chromium`. **WSL/Ubuntu에선 크롬 OS 라이브러리도 필요** —
+  `sudo apt-get install -y libnspr4 libnss3 libasound2t64`
+  (또는 `sudo npx playwright install-deps chromium`). 없으면 `libnspr4.so ... cannot open`
+  으로 브라우저 기동이 실패한다.
+
 ## 구조
 
 - **`src/App.tsx`** — 단일 페이지 SPA의 **단일 상태 소스**. 모든 상태
